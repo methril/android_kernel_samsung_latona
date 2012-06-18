@@ -695,64 +695,6 @@ err:
 	return r;
 }
 
-static void venc_configure_tv_detect(u8 enable)
-{
-	u32 reg;
-
-	venc_enable_clocks(1);
-	reg = venc_read_reg(VENC_GEN_CTRL);
-
-	if (enable) {
-		/* TVDET Active High Setting */
-		reg |= FLD_VAL(1, 16, 16);
-
-		/* Enable TVDET pulse generation */
-		reg |= FLD_VAL(1, 0, 0);
-
-		venc_write_reg(VENC_GEN_CTRL, reg);
-
-	} else {
-		/* Disable TVDET pulse generation */
-		reg |= FLD_VAL(0, 0, 0);
-
-		venc_write_reg(VENC_GEN_CTRL, reg);
-	}
-	venc_enable_clocks(0);
-}
-
-static void venc_enable_tv_detect(struct omap_dss_device *dssdev, u8 enable)
-{
-	tv_detect_enabled = enable;
-}
-
-static bool venc_get_tv_detect(struct omap_dss_device *dssdev)
-{
-
-	return tv_detect_enabled;
-}
-
-static int venc_get_tv_connected(struct omap_dss_device *dssdev)
-{
-	int tv_status;
-	int dev_state = dssdev->state;
-
-	if (tv_detect_enabled) {
-		venc_panel_enable(dssdev);
-		venc_configure_tv_detect(1);
-		/* Wait for 3 vsyncs before checking status*/
-		mdelay(60);
-		tv_status = gpio_get_value(TV_INT_GPIO);
-		venc_configure_tv_detect(0);
-
-		if (dev_state != OMAP_DSS_DISPLAY_ACTIVE)
-			venc_panel_disable(dssdev);
-	} else {
-		tv_status = -EINVAL;
-	}
-
-	return tv_status;
-}
-
 static struct omap_dss_driver venc_driver = {
 	.probe		= venc_panel_probe,
 	.remove		= venc_panel_remove,
