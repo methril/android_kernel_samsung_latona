@@ -230,6 +230,7 @@ int dss_runtime_get(void);
 void dss_runtime_put(void);
 
 void dss_select_hdmi_venc_clk_source(enum dss_hdmi_venc_clk_source_select);
+enum dss_hdmi_venc_clk_source_select dss_get_hdmi_venc_clk_source(void);
 const char *dss_get_generic_clk_source_name(enum omap_dss_clk_source clk_src);
 void dss_dump_clocks(struct seq_file *s);
 
@@ -456,6 +457,7 @@ bool dispc_go_busy(enum omap_channel channel);
 void dispc_go(enum omap_channel channel);
 void dispc_enable_channel(enum omap_channel channel,
 		enum omap_display_type type, bool enable);
+void dispc_mgr_enable(enum omap_channel channel, bool enable);
 bool dispc_is_channel_enabled(enum omap_channel channel);
 int dispc_enable_plane(enum omap_plane plane, bool enable);
 void dispc_enable_replication(enum omap_plane plane, bool enable);

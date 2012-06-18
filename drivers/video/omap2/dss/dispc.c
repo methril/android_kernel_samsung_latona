@@ -2601,6 +2601,76 @@ static void dispc_enable_digit_out(enum omap_display_type type, bool enable)
 	}
 }
 
+static void dispc_mgr_enable_digit_out(bool enable)
+{
+	struct completion frame_done_completion;
+	enum dss_hdmi_venc_clk_source_select src;
+	int r, i;
+	u32 irq_mask;
+	int num_irqs;
+
+	if (REG_GET(DISPC_CONTROL, 1, 1) == enable)
+		return;
+
+	src = dss_get_hdmi_venc_clk_source();
+
+	if (enable) {
+		unsigned long flags;
+		/* When we enable digit output, we'll get an extra digit
+		 * sync lost interrupt, that we need to ignore */
+		spin_lock_irqsave(&dispc.irq_lock, flags);
+		dispc.irq_error_mask &= ~DISPC_IRQ_SYNC_LOST_DIGIT;
+		_omap_dispc_set_irqs();
+		spin_unlock_irqrestore(&dispc.irq_lock, flags);
+	}
+
+	/* When we disable digit output, we need to wait until fields are done.
+	 * Otherwise the DSS is still working, and turning off the clocks
+	 * prevents DSS from going to OFF mode. And when enabling, we need to
+	 * wait for the extra sync losts */
+	init_completion(&frame_done_completion);
+
+	if (src == DSS_HDMI_M_PCLK && enable == false) {
+		irq_mask = DISPC_IRQ_FRAMEDONETV;
+		num_irqs = 1;
+	} else {
+		irq_mask = DISPC_IRQ_EVSYNC_EVEN | DISPC_IRQ_EVSYNC_ODD;
+		/* XXX I understand from TRM that we should only wait for the
+		 * current field to complete. But it seems we have to wait for
+		 * both fields */
+		num_irqs = 2;
+	}
+
+	r = omap_dispc_register_isr(dispc_disable_isr, &frame_done_completion,
+			DISPC_IRQ_EVSYNC_EVEN | DISPC_IRQ_EVSYNC_ODD
+						| DISPC_IRQ_FRAMEDONETV);
+	if (r)
+		DSSERR("failed to register EVSYNC isr\n");
+
+	_enable_digit_out(enable);
+
+	for (i = 0; i < num_irqs; ++i) {
+		if (!wait_for_completion_timeout(&frame_done_completion,
+				msecs_to_jiffies(100)))
+			DSSERR("timeout waiting for digit out to %s\n",
+					enable ? "start" : "stop");
+	}
+
+	r = omap_dispc_unregister_isr(dispc_disable_isr, &frame_done_completion,
+			irq_mask);
+	if (r)
+		DSSERR("failed to unregister %x isr\n", irq_mask);
+
+	if (enable) {
+		unsigned long flags;
+		spin_lock_irqsave(&dispc.irq_lock, flags);
+		dispc.irq_error_mask |= DISPC_IRQ_SYNC_LOST_DIGIT;
+		dispc_write_reg(DISPC_IRQSTATUS, DISPC_IRQ_SYNC_LOST_DIGIT);
+		_omap_dispc_set_irqs();
+		spin_unlock_irqrestore(&dispc.irq_lock, flags);
+	}
+}
+
 bool dispc_is_channel_enabled(enum omap_channel channel)
 {
 	if (channel == OMAP_DSS_CHANNEL_LCD)
@@ -2621,6 +2691,17 @@ void dispc_enable_channel(enum omap_channel channel,
 		dispc_enable_lcd_out(channel, enable);
 	else if (channel == OMAP_DSS_CHANNEL_DIGIT)
 		dispc_enable_digit_out(type, enable);
+	else
+		BUG();
+}
+
+void dispc_mgr_enable(enum omap_channel channel, bool enable)
+{
+	if (channel == OMAP_DSS_CHANNEL_LCD ||
+			channel == OMAP_DSS_CHANNEL_LCD2)
+		dispc_enable_lcd_out(channel, enable);
+	else if (channel == OMAP_DSS_CHANNEL_DIGIT)
+		dispc_mgr_enable_digit_out(enable);
 	else
 		BUG();
 }

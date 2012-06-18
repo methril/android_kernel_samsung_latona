@@ -332,7 +332,7 @@ static void rfbi_transfer_area(struct omap_dss_device *dssdev, u16 width,
 
 	dispc_set_lcd_size(dssdev->manager->id, width, height);
 
-	dispc_enable_channel(dssdev->manager->id, true);
+	dispc_mgr_enable(dssdev->manager->id, true);
 
 	rfbi.framedone_callback = callback;
 	rfbi.framedone_callback_data = data;
