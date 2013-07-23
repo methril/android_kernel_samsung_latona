@@ -135,4 +135,5 @@ source "drivers/virtio/Kconfig"
 source "drivers/rpmsg/Kconfig"
 
 source "drivers/omap_hsi/Kconfig"
+
 endmenu

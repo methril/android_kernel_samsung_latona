@@ -24,6 +24,8 @@
 #include "clockdomain.h"
 #include "pm.h"
 
+#include "omap_opp_data.h"
+
 /**
  * struct omap2_pm_lp_description - Describe low power behavior of the system
  * @oscillator_startup_time:	Time rounded up to uSec for the oscillator to
@@ -114,6 +116,75 @@ struct device *omap4_get_fdif_device(void)
 	return fdif_dev;
 }
 EXPORT_SYMBOL(omap4_get_fdif_device);
+
+#ifdef CONFIG_OMAP_PM
+static ssize_t vdd_opp_show(struct kobject *, struct kobj_attribute *, char *);
+static ssize_t vdd_opp_store(struct kobject *k, struct kobj_attribute *,
+			  const char *buf, size_t n);
+
+static struct kobj_attribute dsp_freq_attr =
+	__ATTR(dsp_freq, 0644, vdd_opp_show, vdd_opp_store);
+
+static ssize_t vdd_opp_show(struct kobject *kobj, struct kobj_attribute *attr,
+			 char *buf)
+{
+
+	if (attr == &dsp_freq_attr)
+	{
+		static struct clk *clk_handle;
+		unsigned long freq;
+		clk_handle = clk_get(NULL, "dpll2_ck");
+			if (!clk_handle)
+				pr_err("%s: clk_get failed to get dpll2_ck\n", __func__);
+
+			        freq = clk_get_rate(clk_handle);
+
+		return sprintf(buf, "%lu\n", freq/1000);
+	}
+	else
+		return -EINVAL;
+}
+
+static ssize_t vdd_opp_store(struct kobject *kobj, struct kobj_attribute *attr,
+			  const char *buf, size_t n)
+{
+	unsigned long value;
+	if (sscanf(buf, "%lu", &value) != 1)
+		return -EINVAL;
+
+	if (attr == &dsp_freq_attr) {
+		u8 opp_id = 1;
+		u8 i, size;
+		size  =
+		    sizeof(omap36xx_opp_def_list_shared)/sizeof(struct omap_opp_def);
+
+		for (i = 0; i < size; i++) {
+			if (omap36xx_opp_def_list_shared[i].freq == 0)
+			       break;
+
+			if (!strcmp("iva", omap36xx_opp_def_list_shared[i].hwmod_name))
+			{
+				if ((omap36xx_opp_def_list_shared[i].freq/1000) == value)
+					break;
+				else
+					opp_id ++;
+			}
+		  }
+
+		if (opp_id == 0) {
+			printk(KERN_ERR "%s: Invalid value\n", __func__);
+			return -EINVAL;
+		}
+
+		omap_pm_dsp_set_min_opp(opp_id);
+
+	} else {
+		return -EINVAL;
+	}
+
+	return n;
+}
+#endif
 
 /**
  * omap_pm_get_pmic_lp_time() - retrieve the oscillator time
@@ -309,6 +380,45 @@ err:
 	return ret;
 }
 
+static int __init boot_volt_scale(struct voltagedomain *voltdm,
+				  unsigned long boot_v)
+{
+	struct omap_volt_data *vdata;
+	int ret = 0;
+
+	vdata = omap_voltage_get_voltdata(voltdm, boot_v);
+	if (IS_ERR_OR_NULL(vdata)) {
+		pr_err("%s:%s: Bad New voltage data for %ld\n",
+			__func__, voltdm->name, boot_v);
+		return PTR_ERR(vdata);
+	}
+	/*
+	 * DO NOT DO abb prescale -
+	 * case 1: OPP needs FBB, bootloader configured FBB
+	 *  - doing a prescale results in bypass -> system fail
+	 * case 2: OPP needs FBB, bootloader does not configure FBB
+	 * - FBB will be configured in postscale
+	 * case 3: OPP needs bypass, bootloader configures FBB
+	 * - bypass will be configured in postscale
+	 * case 4: OPP needs bypass, bootloader configured in bypass
+	 * - bypass programming in postscale skipped
+	 */
+	ret = voltdm_scale(voltdm, vdata);
+	if (ret) {
+		pr_err("%s: Fail set voltage(v=%ld)on vdd%s\n",
+			__func__, boot_v, voltdm->name);
+		return ret;
+	}
+	if (voltdm->abb) {
+		ret = omap_ldo_abb_post_scale(voltdm, vdata);
+		if (ret) {
+			pr_err("%s: Fail abb postscale(v=%ld)vdd%s\n",
+				__func__, boot_v, voltdm->name);
+		}
+	}
+	return ret;
+}
+
 /*
  * This API is to be called during init to put the various voltage
  * domains to the voltage as per the opp table. Typically we boot up
@@ -332,7 +442,7 @@ static int __init omap2_set_init_voltage(char *vdd_name, char *clk_name,
 	}
 
 	voltdm = voltdm_lookup(vdd_name);
-	if (IS_ERR(voltdm)) {
+	if (!voltdm) {
 		printk(KERN_ERR "%s: Unable to get vdd pointer for vdd_%s\n",
 			__func__, vdd_name);
 		goto exit;
@@ -381,8 +491,7 @@ static int __init omap2_set_init_voltage(char *vdd_name, char *clk_name,
 	 */
 
 	if (freq_cur < freq_valid) {
-		ret = voltdm_scale(voltdm,
-			omap_voltage_get_voltdata(voltdm, bootup_volt));
+		ret = boot_volt_scale(voltdm, bootup_volt);
 		if (ret) {
 			pr_err("%s: Fail set voltage-%s(f=%ld v=%ld)on vdd%s\n",
 				__func__, vdd_name, freq_valid,
@@ -403,8 +512,7 @@ static int __init omap2_set_init_voltage(char *vdd_name, char *clk_name,
 	}
 
 	if (freq_cur >= freq_valid) {
-		ret = voltdm_scale(voltdm,
-			omap_voltage_get_voltdata(voltdm, bootup_volt));
+		ret = boot_volt_scale(voltdm, bootup_volt);
 		if (ret) {
 			pr_err("%s: Fail set voltage-%s(f=%ld v=%ld)on vdd%s\n",
 				__func__, clk_name, freq_valid,
@@ -454,6 +562,17 @@ static int __init omap2_common_pm_init(void)
 	omap2_init_processor_devices();
 	omap_pm_if_init();
 
+#ifdef CONFIG_OMAP_PM
+	{
+		int error = -EINVAL;
+
+		error = sysfs_create_file(power_kobj, &dsp_freq_attr.attr);
+		if (error) {
+			printk(KERN_ERR "%s: sysfs_create_file(dsp_freq) failed %d\n", __func__, error);
+			return error;
+		}
+	}
+#endif
 	return 0;
 }
 postcore_initcall(omap2_common_pm_init);

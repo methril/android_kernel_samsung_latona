@@ -548,6 +548,18 @@ config OMAP4_DUTY_CYCLE
 	If you are going to use OPP_NITRO with high level of leakage which.
 	could pontentially sustain a thermal runaway, say Y here.
 
+config SUPPORT_GPS
+	tristate "Enable GPIO Control for GPS"
+	default n
+
+config FSA9480_MICROUSB
+	bool "FSA9480 MicroUSB Driver"
+	depends on I2C && USB_GADGET
+
+config FSA9480_LINE_OUT
+	bool "FSA9480 MicroUSB for LINE OUT"
+	depends on FSA9480_MICROUSB
+
 source "drivers/misc/c2port/Kconfig"
 source "drivers/misc/eeprom/Kconfig"
 source "drivers/misc/cb710/Kconfig"
@@ -556,5 +568,7 @@ source "drivers/misc/ti-st/Kconfig"
 source "drivers/misc/lis3lv02d/Kconfig"
 source "drivers/misc/carma/Kconfig"
 source "drivers/misc/gc-core/Kconfig"
+source "drivers/misc/sensors_core/Kconfig"
+source "drivers/misc/phone_svn/Kconfig"
 
 endif # MISC_DEVICES

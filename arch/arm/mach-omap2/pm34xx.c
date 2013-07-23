@@ -350,6 +350,21 @@ static void restore_table_entry(void)
 	set_cr(control_reg_value);
 }
 
+/* modified for mp3 current -- begin */
+void omap_dpll3_errat_wa(int disable)
+{
+	/* enable/disable autoidle */
+	if (!disable)
+		omap2_cm_rmw_mod_reg_bits(OMAP3430_AUTO_CORE_DPLL_MASK,
+					0x1, PLL_MOD, CM_AUTOIDLE);
+	else
+		omap2_cm_rmw_mod_reg_bits(OMAP3430_AUTO_CORE_DPLL_MASK,
+					0x0, PLL_MOD, CM_AUTOIDLE);
+	return;
+}
+EXPORT_SYMBOL(omap_dpll3_errat_wa);
+/* modified for mp3 current -- end */
+
 void omap_sram_idle(bool suspend)
 {
 	/* Variable to tell what needs to be saved and restored
@@ -443,10 +458,17 @@ void omap_sram_idle(bool suspend)
 	}
 
 	/* PER */
-	if (per_next_state < PWRDM_POWER_ON) {
+	if (per_next_state < PWRDM_POWER_ON && core_next_state < PWRDM_POWER_ON) {
 		per_going_off = (per_next_state == PWRDM_POWER_OFF) ? 1 : 0;
 		omap2_gpio_prepare_for_idle(per_going_off, suspend);
 	}
+
+#ifdef CONFIG_MACH_OMAP_LATONA
+	/* CORE */
+	if (core_next_state <= PWRDM_POWER_RET) {
+		omap3_save_scratchpad_contents();
+	}
+#endif
 
 	/* CORE */
 	if (core_next_state < PWRDM_POWER_ON) {
@@ -457,6 +479,11 @@ void omap_sram_idle(bool suspend)
 			omap3_core_save_context();
 			omap3_cm_save_context();
 
+#ifdef CONFIG_MACH_OMAP_LATONA
+			/* PATCH - Off mode issue on HS device */
+			if (omap_type() != OMAP2_DEVICE_TYPE_GP)
+				omap3_save_secure_ram_context();
+#endif
 		} else {
 			omap2_prm_set_mod_reg_bits(OMAP3430_AUTO_RET_MASK,
 						OMAP3430_GR_MOD,
@@ -525,7 +552,7 @@ void omap_sram_idle(bool suspend)
 	pwrdm_post_transition();
 
 	/* PER */
-	if (per_next_state < PWRDM_POWER_ON) {
+	if (per_next_state < PWRDM_POWER_ON && core_next_state < PWRDM_POWER_ON) {
 		per_prev_state = pwrdm_read_prev_pwrst(per_pwrdm);
 		omap2_gpio_resume_after_idle(per_going_off);
 	}
@@ -593,6 +620,14 @@ static int omap3_pm_suspend(void)
 		if (pwrdm_clear_all_prev_pwrst(pwrst->pwrdm))
 			goto restore;
 	}
+
+#ifdef CONFIG_MACH_OMAP_LATONA
+//idle current optimisation
+		omap_writel(omap_readl(0x48004E00)|0x0,0x48004E00);     //CM_FCLKEN_DSS->EN_DSS1
+		omap_writel(omap_readl(0x48004E10)|0x0, 0x48004E10);     //CM_ICLKEN_DSS->EN_DSS1
+		omap_writel((omap_readl(0x48004E44) |0x2), 0x48004E44); // CM_SLEEPDEP_DSS
+//idle current optimisation
+#endif
 
 	omap3_intc_suspend();
 
@@ -896,7 +931,8 @@ arch_initcall(omap3_pm_early_init);
  */
 static int __init clkdms_setup(struct clockdomain *clkdm, void *unused)
 {
-	if (clkdm->flags & CLKDM_CAN_ENABLE_AUTO)
+	if ((clkdm->flags & CLKDM_CAN_ENABLE_AUTO) &&
+	    !(clkdm->flags & CLKDM_MISSING_IDLE_REPORTING))
 		clkdm_allow_idle(clkdm);
 	else if (clkdm->flags & CLKDM_CAN_FORCE_SLEEP &&
 		 atomic_read(&clkdm->usecount) == 0)
@@ -989,6 +1025,23 @@ static int __init omap3_pm_init(void)
 		omap3630_ctrl_disable_rta();
 
 	clkdm_add_wkdep(neon_clkdm, mpu_clkdm);
+	/*
+	 * Part of fix for errata i468.
+	 * GPIO pad spurious transition (glitch/spike) upon wakeup
+	 * from SYSTEM OFF mode.
+	 */
+	if (omap_rev() <= OMAP3630_REV_ES1_2) {
+		struct clockdomain *wkup_clkdm;
+
+		clkdm_add_wkdep(per_clkdm, core_clkdm);
+
+		/* Also part of fix for errata i582. */
+		wkup_clkdm = clkdm_lookup("wkup_clkdm");
+		if (wkup_clkdm)
+			clkdm_add_wkdep(per_clkdm, wkup_clkdm);
+		else
+			printk(KERN_ERR "%s: failed to look up wkup clock ""domain\n", __func__);
+	}
 	if (omap_type() != OMAP2_DEVICE_TYPE_GP) {
 		omap3_secure_ram_storage =
 			kmalloc(0x803F, GFP_KERNEL);

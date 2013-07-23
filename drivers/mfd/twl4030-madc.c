@@ -218,6 +218,21 @@ static int twl4030_madc_read_channels(struct twl4030_madc_data *madc,
 				      u8 reg_base, unsigned
 						long channels, int *buf)
 {
+#ifdef CONFIG_MACH_OMAP_LATONA
+	int count = 0;
+	u8 reg, i;
+
+	if (unlikely(!buf))
+		return 0;
+
+	for (i = 0; i < TWL4030_MADC_MAX_CHANNELS; i++) {
+		if (channels & (1<<i)) {
+			reg = reg_base + 2*i;
+			buf[i] = twl4030_madc_channel_raw_read(madc, reg);
+			count++;
+		}
+	}
+#else
 	int count = 0, count_req = 0, i;
 	u8 reg;
 
@@ -268,6 +283,7 @@ static int twl4030_madc_read_channels(struct twl4030_madc_data *madc,
 	}
 	if (count_req)
 		dev_err(madc->dev, "%d channel conversion failed\n", count_req);
+#endif
 
 	return count;
 }
@@ -706,6 +722,9 @@ static int __devinit twl4030_madc_probe(struct platform_device *pdev)
 	if (!madc)
 		return -ENOMEM;
 
+	/* Copy the pointer to device struct */
+	madc->dev = &pdev->dev;
+
 	/*
 	 * Phoenix provides 2 interrupt lines. The first one is connected to
 	 * the OMAP. The other one can be connected to the other processor such
@@ -733,10 +752,32 @@ static int __devinit twl4030_madc_probe(struct platform_device *pdev)
 	ret = twl_i2c_write_u8(TWL4030_MODULE_MAIN_CHARGE,
 			       regval, TWL4030_BCI_BCICTL1);
 	if (ret) {
-		dev_err(&pdev->dev, "unable to write reg BCI Ctl1 0x%X\n",
+		dev_err(&pdev->dev, "unable to write reg BCI CTL1 0x%X\n",
 			TWL4030_BCI_BCICTL1);
 		goto err_i2c;
 	}
+
+	/* Check that MADC clock is on */
+	ret = twl_i2c_read_u8(TWL4030_MODULE_INTBR, &regval, TWL4030_REG_GPBR1);
+	if (ret) {
+		dev_err(&pdev->dev, "unable to read reg GPBR1 0x%X\n",
+				TWL4030_REG_GPBR1);
+	}
+
+	/* If MADC clk is not on, turn it on */
+	if (!(regval & TWL4030_GPBR1_MADC_HFCLK_EN)) {
+		dev_info(&pdev->dev, "clk disabled, enabling\n");
+		regval |= TWL4030_GPBR1_MADC_HFCLK_EN;
+		ret = twl_i2c_write_u8(TWL4030_MODULE_INTBR, regval,
+				       TWL4030_REG_GPBR1);
+		if (ret) {
+			dev_err(&pdev->dev, "unable to write reg GPBR1 0x%X\n",
+					TWL4030_REG_GPBR1);
+			goto err_i2c;
+		}
+	}
+
+
 	platform_set_drvdata(pdev, madc);
 	mutex_init(&madc->lock);
 	ret = request_threaded_irq(platform_get_irq(pdev, 0), NULL,

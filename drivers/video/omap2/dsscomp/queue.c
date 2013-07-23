@@ -99,6 +99,21 @@ static void maskref_decmask(struct maskref *om, u32 mask)
  * ===========================================================================
  */
 
+struct dsscomp_cb_work {
+	struct work_struct work;
+	struct dsscomp_data *comp;
+	int status;
+};
+
+struct dsscomp_apply_work {
+	struct work_struct work;
+	dsscomp_t comp;
+};
+
+/* Local caches */
+static struct kmem_cache *dsscomp_cb_wk_cachep;
+static struct kmem_cache *dsscomp_app_wk_cachep;
+
 /* Initialize queue structures, and set up state of the displays */
 int dsscomp_queue_init(struct dsscomp_dev *cdev_)
 {
@@ -128,6 +143,31 @@ int dsscomp_queue_init(struct dsscomp_dev *cdev_)
 	cb_wkq = create_singlethread_workqueue("dsscomp_cb");
 	if (!cb_wkq)
 		goto error;
+
+	/* create cache for dsscomp_cb_work structures */
+	if (!dsscomp_cb_wk_cachep) {
+		dsscomp_cb_wk_cachep = kmem_cache_create("cb_wk_cache",
+					sizeof(struct dsscomp_cb_work), 0,
+						SLAB_HWCACHE_ALIGN, NULL);
+		if (!dsscomp_cb_wk_cachep) {
+			pr_err("DSSCOMP: %s: can't create cache\n",
+							__func__);
+			goto error;
+		}
+	}
+
+	/* create cache for dsscomp_apply_work structures */
+	if (!dsscomp_app_wk_cachep) {
+		dsscomp_app_wk_cachep = kmem_cache_create("app_wk_cache",
+					sizeof(struct dsscomp_apply_work), 0,
+						SLAB_HWCACHE_ALIGN, NULL);
+		if (!dsscomp_app_wk_cachep) {
+			pr_err("DSSCOMP: %s: can't create cache\n", __func__);
+			/* destroy previously created cache */
+			kmem_cache_destroy(dsscomp_cb_wk_cachep);
+			goto error;
+		}
+	}
 
 	return 0;
 error:
@@ -180,7 +220,7 @@ dsscomp_t dsscomp_new(struct omap_overlay_manager *mgr)
 	comp->ovl_mask = comp->ovl_dmask = 0;
 	comp->frm.sync_id = 0;
 	if (cpu_is_omap3630())
-		comp->frm.mgr.ix = 0;
+		comp->frm.mgr.ix = display_ix < 2 ? 0 : 1;
 	else
 		comp->frm.mgr.ix = display_ix;
 
@@ -373,12 +413,6 @@ void dsscomp_drop(dsscomp_t comp)
 }
 EXPORT_SYMBOL(dsscomp_drop);
 
-struct dsscomp_cb_work {
-	struct work_struct work;
-	struct dsscomp_data *comp;
-	int status;
-};
-
 static void dsscomp_mgr_delayed_cb(struct work_struct *work)
 {
 	struct dsscomp_cb_work *wk = container_of(work, typeof(*wk), work);
@@ -386,7 +420,7 @@ static void dsscomp_mgr_delayed_cb(struct work_struct *work)
 	int status = wk->status;
 	u32 ix;
 
-	kfree(work);
+	kmem_cache_free(dsscomp_cb_wk_cachep, wk);
 
 	mutex_lock(&mtx);
 
@@ -433,7 +467,16 @@ static u32 dsscomp_mgr_callback(void *data, int id, int status)
 	    (status == DSS_COMPLETION_DISPLAYED &&
 	     comp->state != DSSCOMP_STATE_DISPLAYED) ||
 	    (status & DSS_COMPLETION_RELEASED)) {
-		struct dsscomp_cb_work *wk = kzalloc(sizeof(*wk), GFP_ATOMIC);
+		struct dsscomp_cb_work *wk;
+
+		/* allocate work object from cache */
+		wk = kmem_cache_zalloc(dsscomp_cb_wk_cachep, GFP_ATOMIC);
+		if (!wk) {
+			pr_err("DSSCOMP: %s: can't allocate cache object\n",
+								__func__);
+			BUG();
+		}
+
 		wk->comp = comp;
 		wk->status = status;
 		INIT_WORK(&wk->work, dsscomp_mgr_delayed_cb);
@@ -476,7 +519,28 @@ static int dsscomp_apply(dsscomp_t comp)
 	/* check if the display is valid and used */
 	r = -ENODEV;
 	d = &comp->frm;
-	display_ix = d->mgr.ix;
+
+	/* OMAP3 supports max two composition. comp->ix = 0 supports either
+	LCD or HDMI panel. comp->ix =1 supports VENC type display only*/
+	if (cpu_is_omap3630()) {
+		if (!comp->ix) {
+			for (i = 0; i < cdev->num_displays; i++) {
+				if (cdev->displays[i]->state ==
+					OMAP_DSS_DISPLAY_ACTIVE) {
+					display_ix = i;
+					break;
+				}
+			}
+		} else	{
+		if (cdev->displays[2]->state == OMAP_DSS_DISPLAY_ACTIVE)
+			display_ix = 2;
+		else
+			return r;
+		}
+	} else	{
+		display_ix = d->mgr.ix;
+	}
+
 	if (display_ix >= cdev->num_displays)
 		goto done;
 	dssdev = cdev->displays[display_ix];
@@ -635,11 +699,6 @@ done:
 	return r;
 }
 
-struct dsscomp_apply_work {
-	struct work_struct work;
-	dsscomp_t comp;
-};
-
 int dsscomp_state_notifier(struct notifier_block *nb,
 						unsigned long arg, void *ptr)
 {
@@ -668,15 +727,21 @@ static void dsscomp_do_apply(struct work_struct *work)
 	/* complete compositions that failed to apply */
 	if (dsscomp_apply(wk->comp))
 		dsscomp_mgr_callback(wk->comp, -1, DSS_COMPLETION_ECLIPSED_SET);
-	kfree(wk);
+	kmem_cache_free(dsscomp_app_wk_cachep, wk);
 }
 
 int dsscomp_delayed_apply(dsscomp_t comp)
 {
 	/* don't block in case we are called from interrupt context */
-	struct dsscomp_apply_work *wk = kzalloc(sizeof(*wk), GFP_NOWAIT);
-	if (!wk)
+	struct dsscomp_apply_work *wk;
+
+	/* allocate work object from cache */
+	wk = kmem_cache_zalloc(dsscomp_app_wk_cachep, GFP_NOWAIT);
+	if (!wk) {
+		pr_warn("DSSCOMP: %s: can't allocate object from cache\n",
+								__func__);
 		return -ENOMEM;
+	}
 
 	mutex_lock(&mtx);
 
