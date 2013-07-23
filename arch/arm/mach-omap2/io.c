@@ -247,6 +247,9 @@ static void __init _omap2_map_common_io(void)
 	 * mdesc->map_io(), but we must also do it here because of the CPU
 	 * revision check below.
 	 */
+
+	omap_l2cache_enable();
+
 	local_flush_tlb_all();
 	flush_cache_all();
 
@@ -428,7 +431,9 @@ void __init omap2_init_common_devices(struct omap_sdrc_params *sdrc_cs0,
 {
 	if (cpu_is_omap24xx() || omap3_has_sdrc()) {
 		omap2_sdrc_init(sdrc_cs0, sdrc_cs1);
+#ifndef CONFIG_MACH_OMAP_LATONA
 		_omap2_init_reprogram_sdrc();
+#endif
 	}
 
 	omap_irq_base_init();

@@ -3,7 +3,15 @@
  * Mikkel Christensen <mlc@ti.com>
  * Felipe Balbi <balbi@ti.com>
  *
+<<<<<<< HEAD
  * Modified from mach-omap2/board-ldp.c
+=======
+ * Modified from mach-omap2/board-zoom.c for Samsung Latona board
+ *
+ * Aditya Patange aka "Adi_Pat" <adithemagnficent@gmail.com> 
+ * Mark "Hill Beast" Kennard <komcomputers@gmail.com>
+ * Phinitnan "Crackerizer" Chanasabaeng <phinitnan_c@xtony.us>
+>>>>>>> dhiru1602_jb-3.0
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -16,19 +24,30 @@
 #include <linux/input.h>
 #include <linux/gpio.h>
 #include <linux/i2c/twl.h>
+<<<<<<< HEAD
 #include <linux/mtd/nand.h>
+=======
+>>>>>>> dhiru1602_jb-3.0
 #include <linux/memblock.h>
 #include <linux/skbuff.h>
 #include <linux/ti_wilink_st.h>
 #include <linux/wl12xx.h>
 
+<<<<<<< HEAD
 #include <asm/mach-types.h>
 #include <asm/mach/arch.h>
 
+=======
+#include <asm/setup.h>
+#include <asm/mach-types.h>
+#include <asm/mach/arch.h>
+#include <asm/sizes.h>
+>>>>>>> dhiru1602_jb-3.0
 #include <plat/common.h>
 #include <plat/board.h>
 #include <plat/usb.h>
 
+<<<<<<< HEAD
 #include <mach/board-zoom.h>
 
 #include "board-flash.h"
@@ -115,6 +134,38 @@ static struct mtd_partition zoom_nand_partitions[] = {
 		.size		= 256 * (64 * 2048),	/* 32M, 0x2000000 */
 	},
 };
+=======
+#include <mach/board-latona.h>
+
+#include "board-flash.h"
+#include "mux.h"
+#include "sdram-qimonda-hyb18m512160af-6.h"
+#include "omap_ion.h"
+#include "omap_ram_console.h"
+#include "control.h"
+
+#define WILINK_UART_DEV_NAME            "/dev/ttyS1"
+
+#ifdef CONFIG_OMAP_RAM_CONSOLE
+#define LATONA_RAM_CONSOLE_START  PLAT_PHYS_OFFSET + 0xE000000
+#define LATONA_RAM_CONSOLE_SIZE    SZ_1M
+#endif
+
+#ifdef CONFIG_OMAP_MUX
+extern struct omap_board_mux *latona_board_mux_ptr;
+extern struct omap_board_mux *latona_board_wk_mux_ptr;
+#else
+#define latona_board_mux_ptr		NULL
+#define latona_board_wk_mux_ptr		NULL
+#endif
+
+static void __init latona_init_early(void)
+{
+	omap2_init_common_infrastructure();
+	omap2_init_common_devices(hyb18m512160af6_sdrc_params,
+					  hyb18m512160af6_sdrc_params);
+}
+>>>>>>> dhiru1602_jb-3.0
 
 static const struct usbhs_omap_board_data usbhs_bdata __initconst = {
 	.port_mode[0]		= OMAP_USBHS_PORT_MODE_UNUSED,
@@ -122,7 +173,11 @@ static const struct usbhs_omap_board_data usbhs_bdata __initconst = {
 	.port_mode[2]		= OMAP_USBHS_PORT_MODE_UNUSED,
 	.phy_reset		= true,
 	.reset_gpio_port[0]	= -EINVAL,
+<<<<<<< HEAD
 	.reset_gpio_port[1]	= ZOOM3_EHCI_RESET_GPIO,
+=======
+	.reset_gpio_port[1]	= 64,
+>>>>>>> dhiru1602_jb-3.0
 	.reset_gpio_port[2]	= -EINVAL,
 };
 
@@ -138,10 +193,17 @@ static int plat_kim_resume(struct platform_device *pdev)
 
 /* wl127x BT, FM, GPS connectivity chip */
 struct ti_st_plat_data wilink_pdata = {
+<<<<<<< HEAD
 	.nshutdown_gpio = 109,
 	.dev_name = WILINK_UART_DEV_NAME,
 	.flow_cntrl = 1,
 	.baud_rate = 3686400,
+=======
+	.nshutdown_gpio = OMAP_GPIO_BT_NRST,
+	.dev_name = WILINK_UART_DEV_NAME,
+	.flow_cntrl = 1,
+	.baud_rate = 3000000,
+>>>>>>> dhiru1602_jb-3.0
 	.suspend = plat_kim_suspend,
 	.resume = plat_kim_resume,
 };
@@ -155,7 +217,11 @@ static struct platform_device btwilink_device = {
 	.id = -1,
 };
 
+<<<<<<< HEAD
 static struct platform_device *zoom_devices[] __initdata = {
+=======
+static struct platform_device *latona_devices[] __initdata = {
+>>>>>>> dhiru1602_jb-3.0
 	&wl127x_device,
 	&btwilink_device,
 };
@@ -167,6 +233,7 @@ static int wl127x_vio_leakage_fix(void)
 
 	pr_info(" wl127x_vio_leakage_fix\n");
 
+<<<<<<< HEAD
 	ret = gpio_request(ZOOM3_BT_RESET_GPIO, "wl127x_bten");
 	if (ret < 0) {
 		pr_err("wl127x_bten gpio_%d request fail",
@@ -180,10 +247,26 @@ static int wl127x_vio_leakage_fix(void)
 	udelay(64);
 
 	gpio_free(ZOOM3_BT_RESET_GPIO);
+=======
+	ret = gpio_request(OMAP_GPIO_BT_NRST, "wl127x_bten");
+	if (ret < 0) {
+		pr_err("wl127x_bten gpio_%d request fail",
+			OMAP_GPIO_BT_NRST);
+		goto fail;
+	}
+
+	gpio_direction_output(OMAP_GPIO_BT_NRST, 1);
+	mdelay(10);
+	gpio_direction_output(OMAP_GPIO_BT_NRST, 0);
+	udelay(64);
+
+	gpio_free(OMAP_GPIO_BT_NRST);
+>>>>>>> dhiru1602_jb-3.0
 fail:
 	return ret;
 }
 
+<<<<<<< HEAD
 static void config_wlan_mux(void)
 {
 	/* WLAN PW_EN and IRQ */
@@ -238,6 +321,86 @@ static void __init omap_zoom_init(void)
 
 static void __init zoom_reserve(void)
 {
+=======
+static struct wl12xx_platform_data latona_wlan_data __initdata = {
+	.irq = OMAP_GPIO_IRQ(LATONA_WIFI_IRQ_GPIO),
+	.board_ref_clock = WL12XX_REFCLOCK_38,
+};
+
+static void latona_wifi_init(void)
+{
+	if (wl12xx_set_platform_data(&latona_wlan_data))
+		pr_err("Error setting wl12xx data\n");
+}
+
+#define GPIO_MSECURE_PIN_ON_HS		1	//TI Patch: MSECURE Pin mode change
+
+static int __init msecure_init(void)
+{
+	int ret = 0;
+
+	//printk("*****msecure_init++\n"); //TI Patch: MSECURE Pin mode change
+#ifdef CONFIG_RTC_DRV_TWL4030
+	/* 3430ES2.0 doesn't have msecure/gpio-22 line connected to T2 */
+	if (omap_type() == OMAP2_DEVICE_TYPE_GP || GPIO_MSECURE_PIN_ON_HS)  //TI Patch: MSECURE Pin mode change
+	{
+		void __iomem *msecure_pad_config_reg =
+		    omap_ctrl_base_get() + 0x5EC;
+		int mux_mask = 0x04;
+		u16 tmp;
+
+		printk("msecure_pin setting: GPIO  %d, %d\n", omap_type(), GPIO_MSECURE_PIN_ON_HS); //TI Patch: MSECURE Pin mode change
+
+		ret = gpio_request(OMAP_GPIO_SYS_DRM_MSECURE, "msecure");
+		if (ret < 0) {
+			printk(KERN_ERR "msecure_init: can't"
+			       "reserve GPIO:%d !\n",
+			       OMAP_GPIO_SYS_DRM_MSECURE);
+			goto out;
+		}
+		/*
+		 * TWL4030 will be in secure mode if msecure line from OMAP
+		 * is low. Make msecure line high in order to change the
+		 * TWL4030 RTC time and calender registers.
+		 */
+		tmp = __raw_readw(msecure_pad_config_reg);
+		tmp &= 0xF8;	/* To enable mux mode 03/04 = GPIO_RTC */
+		tmp |= mux_mask;	/* To enable mux mode 03/04 = GPIO_RTC */
+		__raw_writew(tmp, msecure_pad_config_reg);
+
+		gpio_direction_output(OMAP_GPIO_SYS_DRM_MSECURE, 1);
+	}
+out:	
+	//printk("*****msecure_init--\n"); //TI Patch: MSECURE Pin mode change
+#endif
+
+	return ret;
+}
+
+static void __init latona_init(void)
+{
+	omap3_mux_init(latona_board_mux_ptr, OMAP_PACKAGE_CBP);
+	latona_mux_init_gpio_out();
+	latona_mux_set_wakeup_gpio();
+	msecure_init();
+	usbhs_init(&usbhs_bdata);
+	latona_wifi_init();
+	latona_peripherals_init();
+	latona_display_init();
+	omap_register_ion();
+	/* Added to register latona devices */
+	platform_add_devices(latona_devices, ARRAY_SIZE(latona_devices));
+	wl127x_vio_leakage_fix();
+}
+
+static void __init latona_reserve(void)
+{
+
+#ifdef CONFIG_OMAP_RAM_CONSOLE
+	omap_ram_console_init(LATONA_RAM_CONSOLE_START,
+				LATONA_RAM_CONSOLE_SIZE);
+#endif
+>>>>>>> dhiru1602_jb-3.0
 	/* do the static reservations first */
 	memblock_remove(OMAP3_PHYS_ADDR_SMC_MEM, PHYS_ADDR_SMC_SIZE);
 
@@ -247,6 +410,7 @@ static void __init zoom_reserve(void)
 	omap_reserve();
 }
 
+<<<<<<< HEAD
 MACHINE_START(OMAP_ZOOM2, "OMAP Zoom2 board")
 	.boot_params	= 0x80000100,
 	.reserve	= omap_reserve,
@@ -264,5 +428,28 @@ MACHINE_START(OMAP_ZOOM3, "OMAP Zoom3 board")
 	.init_early	= omap_zoom_init_early,
 	.init_irq	= omap_init_irq,
 	.init_machine	= omap_zoom_init,
+=======
+static void __init latona_fixup(struct machine_desc *desc,
+				    struct tag *tags, char **cmdline,
+				    struct meminfo *mi)
+{
+	mi->nr_banks = 2;
+
+	mi->bank[0].start = 0x80000000;
+	mi->bank[0].size = SZ_256M;
+
+	mi->bank[1].start = 0x90000000;
+	mi->bank[1].size = SZ_256M;
+}
+
+MACHINE_START(LATONA, "SAMSUNG LATONA BOARD")
+	.boot_params	= 0x80000100,
+	.fixup          = latona_fixup,
+	.reserve	= latona_reserve,
+	.map_io		= omap3_map_io,
+	.init_early	= latona_init_early,
+	.init_irq	= omap_init_irq,
+	.init_machine	= latona_init,
+>>>>>>> dhiru1602_jb-3.0
 	.timer		= &omap_timer,
 MACHINE_END

@@ -258,12 +258,25 @@ obj-$(CONFIG_MACH_OMAP_ZOOM3)		+= board-zoom.o \
 					   board-zoom-debugboard.o \
 					   omapxx_apps_brd_id.o
 obj-$(CONFIG_MACH_OMAP_LATONA)		+= board-latona.o \
+<<<<<<< HEAD
 					   board-zoom-peripherals.o \
 					   board-zoom-display.o \
 					   board-flash.o \
 					   hsmmc.o \
 					   board-zoom-debugboard.o \
 					   omapxx_apps_brd_id.o					   
+=======
+					   board-latona-peripherals.o \
+					   board-latona-display.o \
+					   board-latona-phone_svnet.o \
+					   board-latona-battery.o \
+					   board-latona-reboot.o \
+					   board-latona-mux_r08.o \
+					   board-latona-vibrator.o \
+					   board-latona-cmdline.o \
+					   omap3-gptimer12.o \
+					   hsmmc.o
+>>>>>>> dhiru1602_jb-3.0
 obj-$(CONFIG_MACH_OMAP_3630SDP)		+= board-3630sdp.o \
 					   board-zoom-peripherals.o \
 					   board-zoom-display.o \

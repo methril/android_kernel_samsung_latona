@@ -883,15 +883,15 @@ static IMG_BOOL ProcessFlipV2(IMG_HANDLE hCmdCookie,
 	} asMemInfo[5];
 
 	memset(asMemInfo, 0, sizeof(asMemInfo));
-
+#if 0
 	if(uiDssDataLength != sizeof(*psDssData))
 	{
 		WARN(1, "invalid size of private data (%d vs %d)",
 		     uiDssDataLength, sizeof(*psDssData));
 		return IMG_FALSE;
 	}
-
-	if(psDssData->num_ovls == 0 || ui32NumMemInfos == 0)
+#endif
+	if (ui32NumMemInfos == 0)
 	{
 		WARN(1, "must have at least one layer");
 		return IMG_FALSE;
@@ -988,9 +988,12 @@ static IMG_BOOL ProcessFlipV2(IMG_HANDLE hCmdCookie,
 		apsTilerPAs[i] = asMemInfo[ix].psTilerInfo;
 	}
 
-	dsscomp_gralloc_queue(psDssData, apsTilerPAs, false,
-						  dsscomp_proxy_cmdcomplete,
-						  (void *)hCmdCookie);
+	if (psDssData->num_ovls == 0)
+		dsscomp_proxy_cmdcomplete((void *)hCmdCookie, IMG_TRUE);
+	else
+		dsscomp_gralloc_queue(psDssData, apsTilerPAs, false,
+						dsscomp_proxy_cmdcomplete,
+						(void *)hCmdCookie);
 
 	for(i = 0; i < k; i++)
 	{

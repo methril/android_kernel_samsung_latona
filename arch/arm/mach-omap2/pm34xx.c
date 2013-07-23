@@ -350,6 +350,21 @@ static void restore_table_entry(void)
 	set_cr(control_reg_value);
 }
 
+/* modified for mp3 current -- begin */
+void omap_dpll3_errat_wa(int disable)
+{
+	/* enable/disable autoidle */
+	if (!disable)
+		omap2_cm_rmw_mod_reg_bits(OMAP3430_AUTO_CORE_DPLL_MASK,
+					0x1, PLL_MOD, CM_AUTOIDLE);
+	else
+		omap2_cm_rmw_mod_reg_bits(OMAP3430_AUTO_CORE_DPLL_MASK,
+					0x0, PLL_MOD, CM_AUTOIDLE);
+	return;
+}
+EXPORT_SYMBOL(omap_dpll3_errat_wa);
+/* modified for mp3 current -- end */
+
 void omap_sram_idle(bool suspend)
 {
 	/* Variable to tell what needs to be saved and restored
@@ -411,36 +426,6 @@ void omap_sram_idle(bool suspend)
 	}
 
 	pwrdm_pre_transition();
-
-	/*
-	 * Hardware maintains sleep dependencies which will keep the core
-	 * domain from sleeping if certain other domains are active.  However,
-	 * we will be making decisions based on what core is doing.  For
-	 * example, should we call set_dpll3_volt_freq() or not.  So let's
-	 * find out what core will really do.
-	 */
-	if (core_next_state < PWRDM_POWER_ON) {
-		cam_fclken = omap2_cm_read_mod_reg(OMAP3430_CAM_MOD, CM_FCLKEN);
-		dss_fclken = omap2_cm_read_mod_reg(OMAP3430_DSS_MOD, CM_FCLKEN);
-		sgx_fclken = omap2_cm_read_mod_reg(OMAP3430ES2_SGX_MOD,
-							CM_FCLKEN);
-		usb_fclken = omap2_cm_read_mod_reg(OMAP3430ES2_USBHOST_MOD,
-							CM_FCLKEN);
-		iva2_idlest = omap2_cm_read_mod_reg(OMAP3430_IVA2_MOD,
-							CM_IDLEST);
-		dma_idlest = omap2_cm_read_mod_reg(CORE_MOD, CM_IDLEST) &
-							OMAP3430_ST_SDMA_MASK;
-
-		if ((cam_fclken != 0) ||
-			(dss_fclken != 0) ||
-			(sgx_fclken != 0) ||
-			(usb_fclken != 0) ||
-			(iva2_idlest == 0) ||
-			(dma_idlest == 0)) {
-			core_next_state = PWRDM_POWER_ON;
-			pwrdm_set_next_pwrst(core_pwrdm, core_next_state);
-		}
-	}
 
 	/* PER */
 	if (per_next_state < PWRDM_POWER_ON) {
@@ -896,7 +881,8 @@ arch_initcall(omap3_pm_early_init);
  */
 static int __init clkdms_setup(struct clockdomain *clkdm, void *unused)
 {
-	if (clkdm->flags & CLKDM_CAN_ENABLE_AUTO)
+	if ((clkdm->flags & CLKDM_CAN_ENABLE_AUTO) &&
+	    !(clkdm->flags & CLKDM_MISSING_IDLE_REPORTING))
 		clkdm_allow_idle(clkdm);
 	else if (clkdm->flags & CLKDM_CAN_FORCE_SLEEP &&
 		 atomic_read(&clkdm->usecount) == 0)
