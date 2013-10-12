@@ -51,9 +51,7 @@
 #define DRVNAME "modemctl"
 
 //#define USE_EARLYSUSPEND_TO_CTRL_PDAACTIVE_LOW
-#ifndef CONFIG_SVNET_WHITELIST
-    #define USE_LATERESUME_TO_CTRL_PDAACTIVE_HIGH
-#endif
+//#define USE_LATERESUME_TO_CTRL_PDAACTIVE_HIGH
 #define USE_EARLYSUSPEND_TO_CTRL_WHITELIST
 
 //#define SIM_DEBOUNCE_TIME_HZ	(HZ)
@@ -356,7 +354,7 @@ static int pda_on(struct modemctl *mc)
 	}
 
 	gpio_set_value(mc->gpio_pda_active, 1);
-	printk( "PDA ACTIVE HIGH : %d(%d)\n", gpio_get_value( mc->gpio_pda_active ), mc->gpio_pda_active );
+	dev_dbg(mc->dev, "PDA ACTIVE HIGH : %d(%d)\n", gpio_get_value( mc->gpio_pda_active ), mc->gpio_pda_active );
 
 	return 0;
 }
@@ -370,18 +368,18 @@ static int pda_off(struct modemctl *mc)
 	}
 
 	gpio_set_value(mc->gpio_pda_active, 0);
-	printk( "PDA ACTIVE LOW  : %d(%d)\n", gpio_get_value( mc->gpio_pda_active ), mc->gpio_pda_active );
+	dev_dbg(mc->dev, "PDA ACTIVE LOW  : %d(%d)\n", gpio_get_value( mc->gpio_pda_active ), mc->gpio_pda_active );
 
 	return 0;
 }
 
 static int modem_get_active(struct modemctl *mc)
 {
-	dev_err(mc->dev, "%s\n", __func__);
+	dev_dbg(mc->dev, "%s\n", __func__);
 	if(!mc->gpio_phone_active || !mc->gpio_cp_reset)
 		return -ENXIO;
 
-	dev_err(mc->dev, "cp %d phone %d\n",
+	dev_dbg(mc->dev, "cp %d phone %d\n",
 			gpio_get_value(mc->gpio_cp_reset),
 			gpio_get_value(mc->gpio_phone_active));
 
@@ -536,7 +534,7 @@ static void mc_work(struct work_struct *work)
 		return;
 	}
 
-	dev_err( mc->dev, "PHONE ACTIVE: %d\n", r );
+	dev_dbg( mc->dev, "PHONE ACTIVE: %d\n", r );
 
 	envs[ 0 ] = cpdump_int ? "MAILBOX=cp_exit" : "MAILBOX=cp_reset";
 
@@ -916,13 +914,11 @@ static int __devexit modemctl_remove(struct platform_device *pdev)
 }
 
 #if defined( CONFIG_PM )
-static int modemctl_suspend(struct platform_device *pdev, pm_message_t state)
+static int modemctl_suspend(struct device *dev)
 {
-	int retval;
-	struct modemctl *mc = NULL;
-
-	retval = 0;
-	mc = platform_get_drvdata( pdev );
+	struct platform_device *pdev = to_platform_device(dev);
+	struct modemctl *mc = platform_get_drvdata(pdev);
+	int retval = 0;
 
 #if !defined( USE_EARLYSUSPEND_TO_CTRL_PDAACTIVE_LOW )
 	pda_off(mc);
@@ -940,11 +936,10 @@ static int modemctl_suspend(struct platform_device *pdev, pm_message_t state)
 	return 0;
 }
 
-static int modemctl_resume(struct platform_device *pdev)
+static int modemctl_resume(struct device *dev)
 {
-	struct modemctl *mc = NULL;
-
-	mc = platform_get_drvdata( pdev );
+	struct platform_device *pdev = to_platform_device(dev);
+	struct modemctl *mc = platform_get_drvdata(pdev);
 
 #if !defined( USE_LATERESUME_TO_CTRL_PDAACTIVE_HIGH )
 	pda_on(mc);
@@ -952,20 +947,22 @@ static int modemctl_resume(struct platform_device *pdev)
 
 	return 0;
 }
-#else
-#  define modemctl_suspend NULL
-#  define modemctl_resume NULL
-#endif
 
+static const struct dev_pm_ops modemctl_pm_ops = {
+	.suspend	= modemctl_suspend,
+	.resume		= modemctl_resume,
+};
+#endif
 
 
 static struct platform_driver modemctl_driver = {
 	.probe = modemctl_probe,
 	.remove = __devexit_p(modemctl_remove),
-	.suspend = modemctl_suspend,
-	.resume = modemctl_resume,
 	.driver = {
 		.name = DRVNAME,
+#ifdef CONFIG_PM
+		.pm = &modemctl_pm_ops,
+#endif
 	},
 };
 
